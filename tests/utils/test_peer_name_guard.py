@@ -73,13 +73,28 @@ class TestExactMatchIsNoOp:
         assert out == content
         assert corrections == []
 
-    def test_correct_spelling_elsewhere_suppresses_correction(self):
-        # Under-correction is deliberate: if the model got it right once, a
-        # similar-looking token is more likely a different entity.
+    def test_near_miss_after_correct_spelling_is_left_alone(self):
+        # Under-correction is deliberate: once the subject is spelled right, a
+        # later similar-looking token is more likely a different entity.
         content = "chris asked about chrs and the deploy."
         out, corrections = guard(content)
         assert out == content
         assert corrections == []
+
+    def test_near_miss_before_correct_spelling_is_repaired(self):
+        # Observed in live output: the subject is mangled but a later mention
+        # in the same sentence is correct. The subject is what drives the
+        # embedding, so it must still be repaired.
+        out, _ = guard(
+            "chrs second machine uses christopher and differs from chris laptop."
+        )
+        assert out == (
+            "chris second machine uses christopher and differs from chris laptop."
+        )
+
+    def test_possessive_subject_before_correct_spelling_is_repaired(self):
+        out, _ = guard("chrs's backup job fails, and chris needs to diagnose it.")
+        assert out == "chris's backup job fails, and chris needs to diagnose it."
 
 
 class TestObservedCorruptions:

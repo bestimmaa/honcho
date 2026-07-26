@@ -22,7 +22,10 @@ somebody else. Every rule here is deliberately narrow:
 * Only when the first character matches.
 * Only for peer ids of at least :data:`MIN_PEER_ID_LENGTH` characters, so short
   ids like ``pi`` never trigger anything.
-* Never when the content already spells the peer id correctly somewhere.
+* Never after the first correct spelling of the peer id in the same
+  observation. The subject leads, so a near-miss ahead of the first correct
+  spelling is still a mangled subject and is repaired; a near-miss after it is
+  a later mention that the sentence may well have introduced as somebody else.
 * Never for a token that is another real peer in the same workspace -- an
   observation by ``claude`` about ``chris`` is valid.
 * Never for a token that is a known English word.
@@ -215,9 +218,12 @@ def normalize_observation_subject(
             continue
 
         if folded == target:
-            # The model spelled it correctly at least once. Anything else that
-            # looks similar is far more likely to be a different real entity.
-            return content, []
+            # The subject leads the observation, so a near-miss *before* the
+            # first correct spelling is a mangled subject and still gets
+            # repaired. Anything after it is a later mention -- more likely a
+            # different entity the sentence went on to introduce -- and is left
+            # alone.
+            break
 
         if folded in others or folded in _COMMON_WORDS:
             continue
