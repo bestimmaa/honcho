@@ -186,12 +186,21 @@ async def process_representation_tasks_batch(
 
     message_ids = [m.id for m in messages if m.peer_name == observed]
 
-    # Convert to Representation and save
+    # Other real peers in scope: everyone who spoke in this batch plus every
+    # observer. The peer-name guard must never rewrite a mention of one of them
+    # into the observed peer's id.
+    known_peer_ids = {m.peer_name for m in messages} | set(observers)
+
+    # Convert to Representation and save. `observed` is threaded through so the
+    # peer-name guard can repair near-miss misspellings of the peer id in the
+    # observation subject before anything is persisted.
     observations = Representation.from_prompt_representation(
         response.content,
         message_ids,
         latest_message.session_name,
         latest_message.created_at,
+        peer_id=observed,
+        known_peer_ids=sorted(known_peer_ids),
     )
 
     agg_representation_result = crud.CreateDocumentsResult()
