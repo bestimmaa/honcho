@@ -55,26 +55,26 @@ def minimal_deriver_prompt(
     custom_instructions_section = _custom_instructions_section(custom_instructions)
     return c(
         f"""
-Analyze messages to extract **explicit atomic facts** about the target peer.
+Analyze messages to extract **explicit atomic facts** about the target peer, `{peer_id}`.
 
-[EXPLICIT] DEFINITION: Facts about the target peer that can be derived directly from their messages.
+[EXPLICIT] DEFINITION: Facts about `{peer_id}` that can be derived directly from their messages.
    - Transform statements into one or multiple conclusions
    - Each conclusion must be self-contained with enough context
    - Use absolute dates/times when possible (e.g. "June 26, 2025" not "yesterday")
 
 RULES:
-- The target peer is the peer identified below under `Target peer:`.
+- The target peer is `{peer_id}`.
 - A peer can be a human user, AI agent, bot, service, or other actor.
-- Use the exact peer id from `Target peer:` in final observations, not the phrase "the target peer".
-- Properly attribute observations to the correct subject: if it is about the target peer, use the exact peer id as the subject. If the target peer is referencing someone or something else, make that clear.
-- Observations should make sense on their own. Each observation will be used in the future to better understand the target peer.
-- Extract ALL observations from the target peer's messages, using others as context.
+- Write the subject of every observation as exactly `{peer_id}`, character for character. Never abbreviate it, inflect it, or substitute a similar-looking name.
+- Properly attribute observations to the correct subject: if it is about `{peer_id}`, use `{peer_id}` as the subject. If `{peer_id}` is referencing someone or something else, make that clear.
+- Observations should make sense on their own. Each observation will be used in the future to better understand `{peer_id}`.
+- Extract ALL observations from `{peer_id}`'s messages, using others as context.
 - Contextualize each observation sufficiently (e.g. "Ann is nervous about the job interview at the pharmacy" not just "Ann is nervous")
 
-EXAMPLES (using `alice` as the target peer id):
-- EXPLICIT: "I just had my 25th birthday last Saturday" → "alice is 25 years old", "alice's birthday is June 21st"
-- EXPLICIT: "I took my dog for a walk in NYC" → "alice has a dog", "alice lives in NYC"
-- EXPLICIT: "alice attended college" + general knowledge → "alice completed high school or equivalent"
+EXAMPLES (these use `alice` as the peer id purely to show the shape — in your output the subject must be `{peer_id}`, never `alice`):
+- EXPLICIT: "I just turned 25" → "alice is 25 years old"
+- EXPLICIT: "I took my dog for a walk in NYC" → "alice has a dog", "alice walked her dog in NYC"
+- EXPLICIT: "I've lived in NYC for six years" → "alice lives in NYC", "alice has lived in NYC for six years"
 
 {custom_instructions_section}
 

@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
@@ -6,6 +7,38 @@ from pydantic import BaseModel, Field, field_validator
 
 from src import models
 from src.utils.formatting import parse_datetime_iso
+from src.utils.peer_name_guard import normalize_observation_subject
+
+logger = logging.getLogger(__name__)
+
+# Conclusion levels whose `session_name` stamp is trustworthy enough to scope on.
+#
+# Explicit conclusions come from the deriver over a single session's message
+# batch, so their stamp is authoritative. Deductive/inductive conclusions are
+# produced by the dreamer, which reads across *all* sessions (its discovery
+# tools default to session_only=False) but stamps its output with one session —
+# whichever holds the most recent explicit conclusion, see
+# dreamer/dream_scheduler.py. Serving those under a session allowlist would leak
+# conclusions synthesized from sessions outside it.
+#
+# ponytail: whole-level exclusion rather than per-conclusion provenance. The
+# reasoning trees already link each conclusion to its premises, so the real fix
+# is an authoritative source-session set per conclusion; until that exists this
+# fails closed. Tracked in DEV-2201.
+ALLOWLIST_SAFE_LEVELS = ("explicit",)
+
+
+def allowlist_safe_levels(levels: list[str] | None) -> list[str]:
+    """Narrow a level filter to those safe to serve under a session allowlist.
+
+    Returns the intersection with :data:`ALLOWLIST_SAFE_LEVELS`; ``None`` means
+    "no level filter requested" and yields the full safe set. An empty result
+    means the caller asked only for levels we can't scope, and should receive
+    nothing rather than unscoped conclusions.
+    """
+    if levels is None:
+        return list(ALLOWLIST_SAFE_LEVELS)
+    return [level for level in levels if level in ALLOWLIST_SAFE_LEVELS]
 
 
 def _strip_microseconds_and_timezone(timestamp: datetime) -> datetime:
@@ -661,21 +694,61 @@ class Representation(BaseModel):
         message_ids: list[int],
         session_name: str,
         created_at: datetime,
+        peer_id: str | None = None,
+        known_peer_ids: Sequence[str] | None = None,
     ) -> "Representation":
-        """Convert PromptRepresentation to Representation."""
+        """Convert PromptRepresentation to Representation.
+
+        Args:
+            prompt_representation: Structured output from the deriver LLM call.
+            message_ids: Source message ids for the batch.
+            session_name: Session the observations belong to.
+            created_at: Timestamp to stamp on each observation.
+            peer_id: The observed peer. When provided, each observation's
+                content passes through the peer-name guard, which repairs
+                near-miss misspellings of the peer id before the observation
+                reaches storage. See :mod:`src.utils.peer_name_guard`.
+            known_peer_ids: Other real peer ids in scope, so an observation
+                naming a co-participant is never rewritten.
+        """
+        contents = [e.content for e in prompt_representation.explicit]
+        if peer_id:
+            contents = [
+                _guard_peer_name(content, peer_id, known_peer_ids)
+                for content in contents
+            ]
+
         return cls(
             explicit=[
                 ExplicitObservation(
-                    content=e.content,
+                    content=content,
                     created_at=created_at,
                     message_ids=message_ids,
                     session_name=session_name,
                 )
-                for e in prompt_representation.explicit
+                for content in contents
             ],
             deductive=[],
             inductive=[],
         )
+
+
+def _guard_peer_name(
+    content: str, peer_id: str, known_peer_ids: Sequence[str] | None
+) -> str:
+    """Apply the peer-name guard, logging every rewrite so the rate is visible."""
+    guarded, corrections = normalize_observation_subject(
+        content, peer_id, known_peer_ids
+    )
+    for correction in corrections:
+        logger.warning(
+            "peer_name_guard: rewrote %dx %r -> %r in observation for peer %r",
+            correction.count,
+            correction.variant,
+            peer_id,
+            peer_id,
+        )
+    return guarded
 
 
 def _safe_datetime_from_metadata(
